@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Screen Recorder</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1f232c; --line: #2a2f3a;
+    --text: #e8eaf0; --muted: #8d94a5; --rec: #ff3b4e; --ok: #34d399; --accent: #6ea8ff;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 28px 20px 60px; display: grid; gap: 18px; }
+  header { display: flex; align-items: center; justify-content: space-between; }
+  h1 { font-size: 20px; margin: 0; display: flex; align-items: center; gap: 10px; }
+  h1 .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--rec); box-shadow: 0 0 0 4px #ff3b4e33; }
+  .status { font-size: 13px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: 320px 1fr; gap: 18px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .row:last-child { border-bottom: none; }
+  .row small { color: var(--muted); display: block; font-size: 12px; }
+  select, input[type=text] { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px; max-width: 160px; }
+  .switch { position: relative; width: 38px; height: 22px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; background: var(--line); border-radius: 22px; transition: .2s; cursor: pointer; }
+  .switch span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::before { transform: translateX(16px); }
+  button { font: inherit; border: none; cursor: pointer; border-radius: 10px; padding: 10px 16px; font-weight: 600; font-size: 14px; color: var(--text); background: var(--panel2); border: 1px solid var(--line); }
+  button:hover:not(:disabled) { filter: brightness(1.15); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .primary { background: var(--rec); border-color: var(--rec); color: #fff; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .timer { font-variant-numeric: tabular-nums; font-size: 28px; font-weight: 700; margin-left: auto; }
+  .timer.live { color: var(--rec); }
+  .stage { position: relative; background: #000; border-radius: 12px; aspect-ratio: 16/9; overflow: hidden; display: grid; place-items: center; margin-top: 14px; }
+  .stage video { width: 100%; height: 100%; object-fit: contain; }
+  .stage .hint { position: absolute; color: var(--muted); font-size: 14px; text-align: center; padding: 20px; }
+  .countdown { position: absolute; inset: 0; display: none; place-items: center; font-size: 120px; font-weight: 800; background: #000a; }
+  .meter { height: 6px; background: var(--panel2); border-radius: 6px; overflow: hidden; margin-top: 10px; }
+  .meter i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .08s; }
+  .folder { font-size: 12px; color: var(--muted); margin-top: 8px; word-break: break-all; }
+  .list { display: grid; gap: 10px; }
+  .item { display: grid; grid-template-columns: 160px 1fr auto; gap: 14px; align-items: center; background: var(--panel2); border-radius: 10px; padding: 10px; }
+  .item video { width: 160px; border-radius: 6px; background: #000; }
+  .item .meta { font-size: 13px; color: var(--muted); }
+  .item .name { color: var(--text); font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+  .item .btns { display: flex; gap: 6px; flex-direction: column; }
+  .item .btns button { padding: 6px 10px; font-size: 12px; }
+  .empty { color: var(--muted); font-size: 14px; }
+  kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+  .note { font-size: 12px; color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="dot"></span> Screen Recorder</h1>
+    <div class="status" id="status">Ready</div>
+  </header>
+
+  <div class="grid">
+    <!-- SETTINGS -->
+    <div class="panel">
+      <h2>Settings</h2>
+      <div class="row"><div>Computer audio<small>Tab/system sound if your browser allows</small></div>
+        <label class="switch"><input type="checkbox" id="optSystemAudio" checked><span></span></label></div>
+      <div class="row"><div>Microphone<small id="micLabel">Narrate while you record</small></div>
+        <label class="switch"><input type="checkbox" id="optMic" checked><span></span></label></div>
+      <div class="row"><div>Mic device</div><select id="micSelect"><option value="">Default</option></select></div>
+      <div class="row"><div>Webcam bubble<small>Floats on top of your screen</small></div>
+        <label class="switch"><input type="checkbox" id="optCam"><span></span></label></div>
+      <div class="row"><div>Camera</div><select id="camSelect"><option value="">Default</option></select></div>
+      <div class="row"><div>Quality</div>
+        <select id="optQuality">
+          <option value="720">720p · 30fps</option>
+          <option value="1080" selected>1080p · 30fps</option>
+          <option value="1080-60">1080p · 60fps</option>
+          <option value="1440">1440p · 30fps</option>
+        </select></div>
+      <div class="row"><div>Format</div><select id="optFormat"></select></div>
+      <div class="row"><div>3-second countdown</div>
+        <label class="switch"><input type="checkbox" id="optCountdown" checked><span></span></label></div>
+      <div class="row" style="flex-direction:column;align-items:stretch">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>Save folder<small>Recordings stream straight to disk</small></div>
+          <button id="btnFolder">Choose…</button>
+        </div>
+        <div class="folder" id="folderLabel">No folder chosen. Recordings will download when you stop.</div>
+      </div>
+    </div>
+
+    <!-- RECORDER -->
+    <div class="panel">
+      <h2>Record</h2>
+      <div class="controls">
+        <button class="primary" id="btnStart">● Start recording</button>
+        <button id="btnPause" disabled>❚❚ Pause</button>
+        <button id="btnStop" disabled>■ Stop</button>
+        <div class="timer" id="timer">00:00</div>
+      </div>
+      <div class="stage">
+        <video id="live" muted playsinline></video>
+        <div class="hint" id="hint">Click <b>Start recording</b>, then pick a screen, window or tab to share.</div>
+        <div class="countdown" id="countdown">3</div>
+      </div>
+      <div class="meter" title="Microphone level"><i id="meter"></i></div>
+      <p class="note">Shortcuts while this page is focused: <kbd>Alt</kbd>+<kbd>R</kbd> start/stop · <kbd>Alt</kbd>+<kbd>P</kbd> pause/resume. Clicking your browser's "Stop sharing" bar also ends the recording.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Recordings (this session)</h2>
+    <div class="list" id="list"><div class="empty">Nothing recorded yet.</div></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const ui = {
+    status: $("status"), start: $("btnStart"), pause: $("btnPause"), stop: $("btnStop"),
+    timer: $("timer"), live: $("live"), hint: $("hint"), countdown: $("countdown"), meter: $("meter"),
+    sys: $("optSystemAudio"), mic: $("optMic"), micSel: $("micSelect"), micLabel: $("micLabel"),
+    cam: $("optCam"), camSel: $("camSelect"), quality: $("optQuality"), format: $("optFormat"),
+    cd: $("optCountdown"), folderBtn: $("btnFolder"), folderLabel: $("folderLabel"), list: $("list"),
+  };
+
+  // ---------- Feature checks ----------
+  if (!navigator.mediaDevices?.getDisplayMedia || !window.MediaRecorder) {
+    ui.status.textContent = "This browser can't record the screen. Use Chrome, Edge or Firefox on a computer.";
+    ui.start.disabled = true;
+    return;
+  }
+
+  // ---------- Formats (MP4 where supported, WebM fallback) ----------
+  const FORMATS = [
+    { label: "MP4 (H.264)", mime: "video/mp4;codecs=avc1,mp4a.40.2", ext: "mp4" },
+    { label: "MP4", mime: "video/mp4", ext: "mp4" },
+    { label: "WebM (VP9)", mime: "video/webm;codecs=vp9,opus", ext: "webm" },
+    { label: "WebM (VP8)", mime: "video/webm;codecs=vp8,opus", ext: "webm" },
+    { label: "WebM", mime: "video/webm", ext: "webm" },
+  ].filter((f) => MediaRecorder.isTypeSupported(f.mime));
+  FORMATS.forEach((f, i) => ui.format.add(new Option(f.label, i)));
+
+  const QUALITY = {
+    "720": { w: 1280, h: 720, fps: 30, bps: 5e6 },
+    "1080": { w: 1920, h: 1080, fps: 30, bps: 8e6 },
+    "1080-60": { w: 1920, h: 1080, fps: 60, bps: 12e6 },
+    "1440": { w: 2560, h: 1440, fps: 30, bps: 16e6 },
+  };
+
+  // ---------- Device lists ----------
+  async function loadDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const fill = (sel, kind) => {
+        const keep = sel.value;
+        sel.length = 1;
+        devices.filter((d) => d.kind === kind).forEach((d, i) =>
+          sel.add(new Option(d.label || `${kind === "audioinput" ? "Mic" : "Camera"} ${i + 1}`, d.deviceId)));
+        sel.value = keep;
+      };
+      fill(ui.micSel, "audioinput");
+      fill(ui.camSel, "videoinput");
+    } catch {}
+  }
+  loadDevices();
+  navigator.mediaDevices.addEventListener?.("devicechange", loadDevices);
+
+  // ---------- Save folder (File System Access API) ----------
+  let dirHandle = null;
+  if (!window.showDirectoryPicker) {
+    ui.folderBtn.disabled = true;
+    ui.folderLabel.textContent = "Your browser can't pick a folder, so recordings will download to your Downloads folder.";
+  }
+  ui.folderBtn.onclick = async () => {
+    try {
+      dirHandle = await window.showDirectoryPicker({ id: "screen-recordings", mode: "readwrite", startIn: "videos" });
+      ui.folderLabel.textContent = `Saving to: ${dirHandle.name}/`;
+    } catch {}
+  };
+  async function ensureFolderPermission() {
+    if (!dirHandle) return false;
+    const opts = { mode: "readwrite" };
+    if ((await dirHandle.queryPermission(opts)) === "granted") return true;
+    return (await dirHandle.requestPermission(opts)) === "granted";
+  }
+
+  // ---------- State ----------
+  let display, micStream, camStream, mixed, recorder, audioCtx, writable, chunks = [];
+  let pipWindow = null, camVideoEl = null, meterRaf = 0;
+  let startedAt = 0, pausedTotal = 0, pausedAt = 0, tick = 0, fmt, fileName;
+
+  const fmtTime = (ms) => {
+    const s = Math.floor(ms / 1000), h = Math.floor(s / 3600);
+    const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0"), ss = String(s % 60).padStart(2, "0");
+    return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  };
+  const elapsed = () => (recorder?.state === "paused" ? pausedAt : Date.now()) - startedAt - pausedTotal;
+  const setStatus = (t) => (ui.status.textContent = t);
+  const stamp = () => {
+    const d = new Date(), p = (n) => String(n).padStart(2, "0");
+    return `Recording ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} at ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`;
+  };
+
+  // ---------- Webcam bubble (Document Picture-in-Picture, like Loom/Screenity) ----------
+  async function openCamBubble() {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: ui.camSel.value ? { exact: ui.camSel.value } : undefined, width: 640, height: 640 },
+    });
+    if (window.documentPictureInPicture) {
+      pipWindow = await documentPictureInPicture.requestWindow({ width: 240, height: 240 });
+      const d = pipWindow.document;
+      d.body.style.cssText = "margin:0;background:#000;overflow:hidden";
+      const v = d.createElement("video");
+      v.autoplay = v.muted = v.playsInline = true;
+      v.style.cssText = "width:100vw;height:100vh;object-fit:cover;border-radius:50%;transform:scaleX(-1)";
+      v.srcObject = camStream;
+      d.body.append(v);
+    } else {
+      // Fallback: classic video Picture-in-Picture
+      camVideoEl = document.createElement("video");
+      camVideoEl.muted = true; camVideoEl.playsInline = true;
+      camVideoEl.srcObject = camStream;
+      await camVideoEl.play();
+      await camVideoEl.requestPictureInPicture();
+    }
+  }
+  function closeCamBubble() {
+    try { pipWindow?.close(); } catch {}
+    try { if (document.pictureInPictureElement) document.exitPictureInPicture(); } catch {}
+    camStream?.getTracks().forEach((t) => t.stop());
+    pipWindow = camVideoEl = camStream = null;
+  }
+
+  // ---------- Audio mixing (system + mic → one track) ----------
+  function mixAudio(streams) {
+    const withAudio = streams.filter((s) => s && s.getAudioTracks().length);
+    if (!withAudio.length) return [];
+    audioCtx = new AudioContext();
+    const dest = audioCtx.createMediaStreamDestination();
+    withAudio.forEach((s) => audioCtx.createMediaStreamSource(s).connect(dest));
+    return dest.stream.getAudioTracks();
+  }
+  function startMeter(stream) {
+    if (!stream || !audioCtx) return;
+    const an = audioCtx.createAnalyser();
+    an.fftSize = 512;
+    audioCtx.createMediaStreamSource(stream).connect(an);
+    const buf = new Uint8Array(an.fftSize);
+    const loop = () => {
+      an.getByteTimeDomainData(buf);
+      let peak = 0;
+      for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
+      ui.meter.style.width = Math.min(100, (peak / 128) * 160) + "%";
+      meterRaf = requestAnimationFrame(loop);
+    };
+    loop();
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function countdown() {
+    ui.countdown.style.display = "grid";
+    for (let i = 3; i > 0; i--) { ui.countdown.textContent = i; await sleep(1000); }
+    ui.countdown.style.display = "none";
+  }
+
+  // ---------- Start ----------
+  async function start() {
+    ui.start.disabled = true;
+    try {
+      const q = QUALITY[ui.quality.value];
+      fmt = FORMATS[ui.format.value] || FORMATS[0];
+
+      // 1. Screen (must come first — it needs the click gesture)
+      display = await navigator.mediaDevices.getDisplayMedia({
+        video: { width: { ideal: q.w }, height: { ideal: q.h }, frameRate: { ideal: q.fps } },
+        audio: ui.sys.checked ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false,
+        selfBrowserSurface: "exclude",
+        surfaceSwitching: "include",
+        systemAudio: ui.sys.checked ? "include" : "exclude",
+      });
+      display.getVideoTracks()[0].addEventListener("ended", () => stop());
+
+      // 2. Mic
+      if (ui.mic.checked) {
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: ui.micSel.value ? { exact: ui.micSel.value } : undefined, echoCancellation: true, noiseSuppression: true },
+          });
+          loadDevices();
+        } catch { setStatus("Mic blocked — recording without it"); }
+      }
+
+      // 3. Webcam bubble
+      if (ui.cam.checked) {
+        try { await openCamBubble(); loadDevices(); } catch { setStatus("Camera blocked — recording without it"); }
+      }
+
+      // 4. Combine
+      mixed = new MediaStream([...display.getVideoTracks(), ...mixAudio([display, micStream])]);
+      startMeter(micStream);
+      ui.live.srcObject = display;
+      ui.live.play();
+      ui.hint.style.display = "none";
+
+      // 5. Output: stream to a file in the chosen folder, else buffer in memory
+      fileName = `${stamp()}.${fmt.ext}`;
+      writable = null; chunks = [];
+      if (await ensureFolderPermission().catch(() => false)) {
+        const fh = await dirHandle.getFileHandle(fileName, { create: true });
+        writable = await fh.createWritable();
+      }
+
+      if (ui.cd.checked) await countdown();
+
+      recorder = new MediaRecorder(mixed, { mimeType: fmt.mime, videoBitsPerSecond: q.bps, audioBitsPerSecond: 160000 });
+      let writeChain = Promise.resolve();
+      recorder.ondataavailable = (e) => {
+        if (!e.data.size) return;
+        if (writable) writeChain = writeChain.then(() => writable.write(e.data));
+        else chunks.push(e.data);
+      };
+      recorder.onstop = () => writeChain.then(finish);
+      recorder.start(1000); // 1-second chunks: a crash loses at most ~1s when saving to a folder
+
+      startedAt = Date.now(); pausedTotal = 0;
+      tick = setInterval(() => (ui.timer.textContent = fmtTime(elapsed())), 250);
+      ui.timer.classList.add("live");
+      ui.pause.disabled = ui.stop.disabled = false;
+      ui.start.textContent = "● Recording…";
+      setStatus(writable ? `Recording → ${dirHandle.name}/${fileName}` : "Recording");
+      document.title = "● REC — Screen Recorder";
+    } catch (err) {
+      cleanup();
+      ui.start.disabled = false;
+      setStatus(err?.name === "NotAllowedError" ? "Screen sharing was cancelled" : `Couldn't start: ${err?.message || err}`);
+    }
+  }
+
+  // ---------- Pause / Stop ----------
+  function togglePause() {
+    if (!recorder) return;
+    if (recorder.state === "recording") {
+      recorder.pause(); pausedAt = Date.now();
+      ui.pause.textContent = "▶ Resume"; ui.timer.classList.remove("live"); setStatus("Paused");
+    } else if (recorder.state === "paused") {
+      recorder.resume(); pausedTotal += Date.now() - pausedAt;
+      ui.pause.textContent = "❚❚ Pause"; ui.timer.classList.add("live"); setStatus("Recording");
+    }
+  }
+  function stop() {
+    if (recorder && recorder.state !== "inactive") { setStatus("Saving…"); recorder.stop(); }
+    else cleanup();
+  }
+
+  async function finish() {
+    const duration = elapsed();
+    let blob, savedTo;
+    if (writable) {
+      await writable.close();
+      const fh = await dirHandle.getFileHandle(fileName);
+      blob = await fh.getFile();
+      savedTo = `${dirHandle.name}/${fileName}`;
+    } else {
+      blob = new Blob(chunks, { type: fmt.mime.split(";")[0] });
+      download(blob, fileName);
+      savedTo = "Downloads";
+    }
+    addToList(blob, fileName, duration, savedTo);
+    setStatus(`Saved to ${savedTo}`);
+    cleanup();
+  }
+
+  function cleanup() {
+    clearInterval(tick); cancelAnimationFrame(meterRaf);
+    [display, micStream, mixed].forEach((s) => s?.getTracks().forEach((t) => t.stop()));
+    closeCamBubble();
+    audioCtx?.close().catch(() => {});
+    display = micStream = mixed = recorder = audioCtx = writable = null;
+    ui.live.srcObject = null; ui.hint.style.display = ""; ui.meter.style.width = "0";
+    ui.start.disabled = false; ui.start.textContent = "● Start recording";
+    ui.pause.disabled = ui.stop.disabled = true; ui.pause.textContent = "❚❚ Pause";
+    ui.timer.classList.remove("live"); ui.countdown.style.display = "none";
+    document.title = "Screen Recorder";
+  }
+
+  function download(blob, name) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  }
+
+  // ---------- Recordings list ----------
+  function addToList(blob, name, duration, savedTo) {
+    if (ui.list.querySelector(".empty")) ui.list.innerHTML = "";
+    const url = URL.createObjectURL(blob);
+    const item = document.createElement("div");
+    item.className = "item";
+    item.innerHTML = `
+      <video src="${url}" controls preload="metadata"></video>
+      <div><div class="name"></div>
+        <div class="meta">${fmtTime(duration)} · ${(blob.size / 1048576).toFixed(1)} MB · saved to ${savedTo.replace(/</g, "&lt;")}</div></div>
+      <div class="btns"><button data-a="dl">Download again</button><button data-a="rm">Remove</button></div>`;
+    item.querySelector(".name").textContent = name;
+    item.querySelector('[data-a="dl"]').onclick = () => download(blob, name);
+    item.querySelector('[data-a="rm"]').onclick = () => { URL.revokeObjectURL(url); item.remove();
+      if (!ui.list.children.length) ui.list.innerHTML = '<div class="empty">Nothing recorded yet.</div>'; };
+    ui.list.prepend(item);
+  }
+
+  // ---------- Wiring ----------
+  ui.start.onclick = start;
+  ui.pause.onclick = togglePause;
+  ui.stop.onclick = stop;
+  document.addEventListener("keydown", (e) => {
+    if (!e.altKey) return;
+    if (e.code === "KeyR") { e.preventDefault(); recorder ? stop() : !ui.start.disabled && start(); }
+    if (e.code === "KeyP") { e.preventDefault(); togglePause(); }
+  });
+  window.addEventListener("beforeunload", (e) => { if (recorder) { e.preventDefault(); e.returnValue = ""; } });
+})();
+</script>
+</body>
+</html>
